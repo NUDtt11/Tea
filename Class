@@ -1,0 +1,66 @@
+class PWD(nn.Module):
+    def __init__(self, c1, c2):
+        super().__init__()
+        # print(f"  -> PWD 成功初始化: c1={c1}, c2={c2}") # 减少刷屏，暂时注释
+        self.conv = nn.Conv2d(c1 * 4, c2, 1, 1, 0, bias=False)
+        self.bn = nn.BatchNorm2d(c2)
+        self.act = nn.SiLU()
+
+    def forward(self, x):
+        y = dwt_init(x)
+        return self.act(self.bn(self.conv(y)))
+
+class SD-MoE(nn.Module):
+    """
+    Lightweight grid-level expert convolution.
+
+    对每个空间位置，根据输入特征自适应地从多个 1x1 expert 卷积中选择/加权，
+    用于区分不同局部模式（如虫体纹理、病斑斑块、背景叶脉等）。
+
+    Args:
+        c (int): 输入/输出通道数（保持不变）
+        num_experts (int): 专家个数，建议 2 或 3 即可
+        reduction (int): gate 中通道压缩比例
+    """
+
+    def __init__(self, c: int, num_experts: int = 2, reduction: int = 4):
+        super().__init__()
+        self.num_experts = num_experts
+
+        # 一组 1x1 expert 卷积，保持通道数不变
+        self.experts = nn.ModuleList(
+            [Conv(c, c, k=1, s=1, act=True) for _ in range(num_experts)]
+        )
+
+        # gate：输入特征 -> 每个 expert 在每个空间位置的权重
+        hidden = max(c // reduction, 4)  # 防止太小
+        self.gate = nn.Sequential(
+            nn.Conv2d(c, hidden, kernel_size=1, stride=1, padding=0, bias=True),
+            nn.BatchNorm2d(hidden),
+            nn.SiLU(inplace=True),
+            nn.Conv2d(hidden, num_experts, kernel_size=1, stride=1, padding=0, bias=True)
+        )
+class MultiTCA(nn.Module):
+    """
+    统一门控：对单尺度特征做通道注意力。
+    这里 c2 设成可选，兼容两种调用方式：
+      - CSG_UniGate(c)        # 只传一个通道数
+      - CSG_UniGate(c1, c2)   # 传输入通道 + 输出通道
+    """
+    def __init__(self, c1, c2=None, reduction: int = 4, *args, **kwargs):
+        super().__init__()
+
+        # 如果只传了一个参数，就默认输入输出通道一样
+        if c2 is None:
+            c2 = c1
+        self.c = int(c2)
+
+        hidden = max(self.c // reduction, 4)
+
+        self.gate = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),                 # B, C, 1, 1
+            nn.Conv2d(self.c, hidden, 1, 1, 0, bias=True),
+            nn.SiLU(inplace=True),
+            nn.Conv2d(hidden, self.c, 1, 1, 0, bias=True),
+            nn.Sigmoid()
+        )
