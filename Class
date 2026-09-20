@@ -44,8 +44,8 @@ class MultiTCA(nn.Module):
     """
     统一门控：对单尺度特征做通道注意力。
     这里 c2 设成可选，兼容两种调用方式：
-      - CSG_UniGate(c)        # 只传一个通道数
-      - CSG_UniGate(c1, c2)   # 传输入通道 + 输出通道
+      - MultiTCA(c)        # 只传一个通道数
+      - MultiTCA(c1, c2)   # 传输入通道 + 输出通道
     """
     def __init__(self, c1, c2=None, reduction: int = 4, *args, **kwargs):
         super().__init__()
